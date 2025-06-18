@@ -6,7 +6,6 @@ package com.ruoyi.wxmini.service;
  */
 public interface IWxMiniJwtService {
 
-
     String createToken(String userId);
 
     Boolean verifyToken(String token);
