@@ -1,5 +1,6 @@
 package com.ruoyi.wxmini.service.impl;
 
+import cn.hutool.core.lang.UUID;
 import com.ruoyi.wxmini.bo.WxPayCreateOrderParam;
 import com.ruoyi.wxmini.service.AbsWxPayBaseService;
 import com.ruoyi.wxmini.service.IWxPayDemoService;
@@ -18,6 +19,11 @@ import java.util.HashMap;
 @Service
 @Slf4j
 public class WxPayDemoServiceImpl extends AbsWxPayBaseService<WxPayDemoVo> implements IWxPayDemoService {
+
+    @Override
+    public String getResourceId(WxPayDemoVo payVo) {
+        return UUID.fastUUID().toString();
+    }
 
     @Override
     public Boolean checkBeforeCreatOrder(String userId, WxPayDemoVo payVo) throws Exception {

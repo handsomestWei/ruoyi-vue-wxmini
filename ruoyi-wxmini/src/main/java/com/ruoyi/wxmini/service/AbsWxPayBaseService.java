@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 微信小程序支付模板抽象基类
@@ -28,6 +29,8 @@ public abstract class AbsWxPayBaseService<P> {
     private WxPayService wxPayService;
 
     private static final String WX_PAY_NOTIFY_URL = "https://xxx.com/api/wxmini/pay/notify";
+    // 无锁化的Map+原子操作，记录资源的“占用状态”。synchronized会让同一资源的请求串行化，虽然能保证唯一性，但高并发下会阻塞线程，影响吞吐量。
+    private ConcurrentHashMap<String, Object> resourceFlagMap = new ConcurrentHashMap<>();
 
     /**
      * 创建支付订单
@@ -39,31 +42,42 @@ public abstract class AbsWxPayBaseService<P> {
      * @date 2025/6/12 23:50
      */
     public WxPayParamVo createOrder(String userId, P payVo) throws Exception {
-        // 1、创建订单前的业务核验
-        if (!this.checkBeforeCreatOrder(userId, payVo)) {
-            return null;
+        // 获取资源id，尝试占用资源。对资源加锁，避免生成重复订单
+        String resourceId = this.getResourceId(payVo);
+        if (!(resourceFlagMap.putIfAbsent(resourceId, Boolean.TRUE) == null)) {
+            // 已有请求在处理该资源，直接返回或抛异常
+            throw new RuntimeException("请稍后再试");
         }
-        // 局部变量上下文缓存，减少数据重复查询
-        HashMap<String, Object> contextMap = new HashMap<>();
-        // 2、构建订单参数
-        WxPayCreateOrderParam orderParam = this.buildOrderParam(userId, payVo, contextMap);
-        if (orderParam == null) {
-            return null;
-        }
-        // 3、获取支付参数
-        WxPayUnifiedOrderV3Result.JsapiResult jsapiResult = this.createOrder(orderParam);
-        if (jsapiResult == null) {
-            return null;
-        }
-        // 4、保存订单信息
-        String orderNo = orderParam.getOrderNo();
-        if (this.saveOrderInfo(orderNo, payVo, orderParam, contextMap)) {
-            WxPayParamVo payParamVo = new WxPayParamVo();
-            payParamVo.setOrderNo(orderNo);
-            payParamVo.setPayParam(jsapiResult);
-            return payParamVo;
-        } else {
-            return null;
+        try {
+            // 1、创建订单前的业务核验
+            if (!this.checkBeforeCreatOrder(userId, payVo)) {
+                return null;
+            }
+            // 局部变量上下文缓存，减少数据重复查询
+            HashMap<String, Object> contextMap = new HashMap<>();
+            // 2、构建订单参数
+            WxPayCreateOrderParam orderParam = this.buildOrderParam(userId, payVo, contextMap);
+            if (orderParam == null) {
+                return null;
+            }
+            // 3、获取支付参数
+            WxPayUnifiedOrderV3Result.JsapiResult jsapiResult = this.createOrder(orderParam);
+            if (jsapiResult == null) {
+                return null;
+            }
+            // 4、保存订单信息
+            String orderNo = orderParam.getOrderNo();
+            if (this.saveOrderInfo(orderNo, payVo, orderParam, contextMap)) {
+                WxPayParamVo payParamVo = new WxPayParamVo();
+                payParamVo.setOrderNo(orderNo);
+                payParamVo.setPayParam(jsapiResult);
+                return payParamVo;
+            } else {
+                return null;
+            }
+        } finally {
+            // 释放资源占用
+            resourceFlagMap.remove(resourceId);
         }
     }
 
@@ -124,6 +138,10 @@ public abstract class AbsWxPayBaseService<P> {
         request.setOutTradeNo(orderNo);
         WxPayOrderQueryV3Result result = wxPayService.queryOrderV3(request);
         Boolean payResult = "SUCCESS".equals(result.getTradeState());
+        if (!payResult) {
+            // 非支付成功，强制关闭旧订单
+            wxPayService.closeOrderV3(orderNo);
+        }
         this.handlePayResult(payResult, orderNo);
         return payResult;
     }
@@ -143,6 +161,12 @@ public abstract class AbsWxPayBaseService<P> {
             return this.closeOrder(orderNo);
         }
     }
+
+    /*
+     * 获取资源Id，粒度要细。后续创建订单时，对资源加锁，避免创建重复订单。
+     * 某些资源也可能没有限制，不需要锁定，每次只需要返回唯一id即可
+     */
+    public abstract String getResourceId(P payVo);
 
     /**
      * 创建订单前做业务核验
