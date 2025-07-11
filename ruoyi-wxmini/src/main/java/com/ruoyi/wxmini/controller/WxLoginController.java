@@ -54,7 +54,7 @@ public class WxLoginController {
         WxUserInfo wxUserInfo = new WxUserInfo();
         try {
             WxMaJscode2SessionResult session = wxMaService.getUserService().getSessionInfo(code);
-            // 如果已注册，返回用户信息；如果未注册，自动注册并保存用户信息
+            // 同步微信侧用户信息：如果已注册，返回用户信息；如果未注册，自动注册并保存用户信息
             String openId = session.getOpenid();
             UserInfo userInfo = userInfoService.selectUserInfoByOpenId(openId);
             if (userInfo == null) {
