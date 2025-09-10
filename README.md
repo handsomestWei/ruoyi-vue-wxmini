@@ -140,5 +140,6 @@ wx:
 - **扩展性强**: 新增支付业务只需继承基类并实现抽象方法
 
 ## 参考
++ [微信官方文档-小程序登录](https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/login.html)
 + [小程序对接demo](https://github.com/binarywang/weixin-java-miniapp-demo)
 + [支付V3版本](https://github.com/binarywang/WxJava/tree/develop/spring-boot-starters/wx-java-pay-spring-boot-starter)
